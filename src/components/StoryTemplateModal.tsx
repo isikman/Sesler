@@ -32,6 +32,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   const [transformedUrl, setTransformedUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
+  const [transformStatus, setTransformStatus] = useState<'checking' | 'processing' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFileChange = (file: File) => {
@@ -53,6 +54,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
     }
 
     setIsTransforming(true);
+    setTransformStatus('checking');
 
     try {
       const formDataToSend = new FormData();
@@ -63,6 +65,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       formDataToSend.append('childAge', formData.age);
       formDataToSend.append('childGender', formData.gender);
 
+      // Make.com webhook'una fotoğrafı gönder
       const response = await fetch(import.meta.env.VITE_PHOTO_TRANSFORM_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -81,11 +84,12 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
         throw new Error(data.message);
       }
 
-      // Dönüşüm durumunu kontrol et
-      let transformCheckCount = 0;
-      const maxChecks = 20; // Maksimum 1 dakika (3 saniye * 20)
-      
-      const checkStatus = async () => {
+      // Başarılı yanıt geldi, durumu güncelle
+      setTransformStatus('processing');
+      toast.success('Dönüşüm işlemi başlatıldı');
+
+      // Netlify function'dan yanıt bekle
+      const checkTransformStatus = async () => {
         try {
           const statusResponse = await fetch('/.netlify/functions/photo-transform-status', {
             method: 'POST',
@@ -108,31 +112,31 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
           if (statusData.success && statusData.transformedImageUrl) {
             setTransformedUrl(statusData.transformedImageUrl);
             setIsTransforming(false);
+            setTransformStatus(null);
             toast.success('Fotoğraf başarıyla dönüştürüldü');
             return;
           }
 
+          // Hata durumu
           if (!statusData.success) {
             throw new Error(statusData.message || 'Dönüştürme işlemi başarısız oldu');
           }
 
-          transformCheckCount++;
-          if (transformCheckCount < maxChecks) {
-            setTimeout(checkStatus, 3000); // 3 saniye sonra tekrar kontrol et
-          } else {
-            throw new Error('Dönüştürme işlemi zaman aşımına uğradı');
-          }
+          // Hala işlem devam ediyor, 3 saniye sonra tekrar kontrol et
+          setTimeout(checkTransformStatus, 3000);
         } catch (error) {
           setIsTransforming(false);
+          setTransformStatus(null);
           toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
         }
       };
 
       // İlk durum kontrolünü başlat
-      setTimeout(checkStatus, 3000);
+      setTimeout(checkTransformStatus, 3000);
 
     } catch (error) {
       setIsTransforming(false);
+      setTransformStatus(null);
       toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
     }
   };
@@ -355,7 +359,9 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
                   {isTransforming ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50">
                       <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin mb-4"></div>
-                      <p className="text-gray-600 font-medium">Fotoğraf Dönüştürülüyor...</p>
+                      <p className="text-gray-600 font-medium">
+                        {transformStatus === 'checking' ? 'Fotoğraf Kontrol Ediliyor...' : 'Dönüşüm İşlemi Devam Ediyor...'}
+                      </p>
                       <p className="text-sm text-gray-500 mt-2">Lütfen bekleyin</p>
                     </div>
                   ) : transformedUrl ? (
