@@ -1,0 +1,22 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    "storyTemplates": {
+      ".read": true,
+      ".write": false,
+      "$templateId": {
+        ".read": true
+      }
+    },
+    "userStories": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid",
+        "$storyId": {
+          ".read": "$uid === auth.uid",
+          ".write": "$uid === auth.uid"
+        }
+      }
+    }
+  }
+}
