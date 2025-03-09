@@ -40,11 +40,13 @@ const loadingSteps: LoadingStep[] = [
 export default function StoryLoadingModal({ isOpen, onComplete, storyTitle }: StoryLoadingModalProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
 
   useEffect(() => {
     if (!isOpen) {
       setCurrentStep(0);
       setIsCompleted(false);
+      setCompletedSteps([]);
       return;
     }
 
@@ -53,39 +55,48 @@ export default function StoryLoadingModal({ isOpen, onComplete, storyTitle }: St
 
     const advanceStep = () => {
       setCurrentStep(prev => {
-        if (prev < loadingSteps.length - 1) {
-          return prev + 1;
+        const nextStep = prev + 1;
+        if (nextStep <= loadingSteps.length - 1) {
+          setCompletedSteps(current => [...current, prev]);
+          return nextStep;
         }
         clearInterval(stepInterval);
-        setIsCompleted(true);
         
-        // Konfeti efekti
-        const duration = 1500;
-        const animationEnd = Date.now() + duration;
-        const colors = ['#FF69B4', '#4169E1', '#FFD700', '#98FB98'];
-
-        const frame = () => {
-          confetti({
-            particleCount: 2,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 },
-            colors: colors
-          });
-          confetti({
-            particleCount: 2,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 },
-            colors: colors
-          });
-
-          if (Date.now() < animationEnd) {
-            requestAnimationFrame(frame);
-          }
-        };
+        // Son adımı tamamlandı olarak işaretle
+        setCompletedSteps(current => [...current, prev]);
         
-        frame();
+        // Kısa bir gecikme ile tamamlanma durumunu ayarla
+        setTimeout(() => {
+          setIsCompleted(true);
+          
+          // Konfeti efekti
+          const duration = 1500;
+          const animationEnd = Date.now() + duration;
+          const colors = ['#FF69B4', '#4169E1', '#FFD700', '#98FB98'];
+
+          const frame = () => {
+            confetti({
+              particleCount: 2,
+              angle: 60,
+              spread: 55,
+              origin: { x: 0 },
+              colors: colors
+            });
+            confetti({
+              particleCount: 2,
+              angle: 120,
+              spread: 55,
+              origin: { x: 1 },
+              colors: colors
+            });
+
+            if (Date.now() < animationEnd) {
+              requestAnimationFrame(frame);
+            }
+          };
+        
+          frame();
+        }, 500); // Son adımın tamamlanması için 500ms bekle
 
         // Tamamlandıktan sonra modalı kapat
         completionTimeout = setTimeout(() => {
@@ -123,7 +134,7 @@ export default function StoryLoadingModal({ isOpen, onComplete, storyTitle }: St
         <div className="space-y-4">
           {loadingSteps.map((step, index) => {
             const isActive = index === currentStep;
-            const isComplete = index < currentStep;
+            const isComplete = completedSteps.includes(index);
 
             return (
               <div
