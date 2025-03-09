@@ -14,9 +14,7 @@ interface StoryTemplateModalProps {
 
 interface TransformResponse {
   success: boolean;
-  transformedImageUrl: string;
-  message?: string;
-  error?: string;
+  message: string;
 }
 
 export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemplateModalProps) {
@@ -35,6 +33,8 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   const [isDragging, setIsDragging] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [transformStatus, setTransformStatus] = useState<string | null>(null);
+  const [transformError, setTransformError] = useState<string | null>(null);
 
   const handleFileChange = (file: File) => {
     if (file) {
@@ -55,6 +55,9 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
     }
 
     setIsTransforming(true);
+    setTransformStatus(null);
+    setTransformError(null);
+
     try {
       const formDataToSend = new FormData();
       formDataToSend.append('photo', formData.photo);
@@ -79,13 +82,15 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       const data: TransformResponse = await response.json();
       
       if (!data.success) {
-        throw new Error(data.error || 'Dönüştürme işlemi başarısız oldu');
+        throw new Error(data.message || 'Dönüştürme işlemi başlatılamadı');
       }
 
-      setTransformedUrl(data.transformedImageUrl);
-      toast.success(data.message || 'Fotoğraf başarıyla dönüştürüldü');
+      setTransformStatus('Dönüşüm işlemi başladı. Lütfen bekleyin...');
+      toast.success('Fotoğraf dönüştürme işlemi başlatıldı');
+
     } catch (error) {
       console.error('Transform error:', error);
+      setTransformError(error instanceof Error ? error.message : 'Bir hata oluştu');
       toast.error('Fotoğraf dönüştürülürken bir hata oluştu');
     } finally {
       setIsTransforming(false);
@@ -134,7 +139,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       toast.success('Hikayeniz oluşturulmaya başlandı! Masallarım sayfasından takip edebilirsiniz.');
       onClose();
       
-      // Yönlendirme öncesi kısa bir gecikme ekle
       setTimeout(() => {
         navigate('/my-stories');
       }, 1500);
@@ -390,6 +394,18 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
               )}
             </button>
           </div>
+
+          {transformStatus && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium">
+              {transformStatus}
+            </div>
+          )}
+
+          {transformError && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-50 text-red-700 px-4 py-2 rounded-full text-sm font-medium">
+              {transformError}
+            </div>
+          )}
         </div>
       </div>
     </div>
