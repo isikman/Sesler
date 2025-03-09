@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, Wand2, Crown, Star } from 'lucide-react';
+import { Eye, Wand2, Crown, Star, Sparkles, ArrowRight, BookOpen } from 'lucide-react';
 import StoryReader from '../components/StoryReader';
 import StoryTemplateModal from '../components/StoryTemplateModal';
 import StoryLoadingModal from '../components/StoryLoadingModal';
@@ -91,8 +91,8 @@ export default function Dashboard() {
   };
 
   const handleStoryTemplateUse = (storyId: string) => {
-    setSelectedStory(null); // Close the story reader
-    setTemplateStory(storyId); // Open the template modal
+    setSelectedStory(null);
+    setTemplateStory(storyId);
   };
 
   const currentStory = stories.find(story => story.id === selectedStory);
@@ -112,89 +112,85 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Keşfet</h1>
-        <p className="text-gray-600 mt-2">
-          Hazır masal şablonlarından birini seç veya kendi masalını yarat
-        </p>
+    <div className="space-y-12">
+      {/* Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-500 to-blue-600 p-8 md:p-12">
+        <div className="relative z-10">
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+            Hoş Geldin, Maceraperest! ✨
+          </h1>
+          <p className="text-blue-100 text-lg md:text-xl max-w-2xl">
+            Bugün hangi büyülü hikayeyi keşfetmek istersin? Hazır şablonlardan birini seç veya kendi masalını yarat.
+          </p>
+        </div>
+        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-400 rounded-full filter blur-3xl opacity-20 -translate-y-1/2 translate-x-1/2" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-300 rounded-full filter blur-2xl opacity-20 translate-y-1/2 -translate-x-1/2" />
       </div>
 
-      {/* Haftanın Hikayesi */}
+      {/* Featured Story */}
       {featuredStory && (
-        <div className="relative bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl overflow-hidden shadow-lg border border-blue-100">
-          <div className="absolute top-4 left-4 bg-yellow-400 text-white px-4 py-1 rounded-full flex items-center gap-2 shadow-lg z-20">
-            <Crown className="w-4 h-4" />
-            <span className="font-medium">Haftanın Hikayesi</span>
+        <div className="relative">
+          <div className="absolute -inset-1">
+            <div className="w-full h-full mx-auto rotate-180 opacity-30 blur-lg filter bg-gradient-to-r from-yellow-400 via-pink-500 to-blue-500" />
           </div>
-          
-          {/* Original Photo Circle */}
-          <div className="absolute top-4 right-4 z-20">
-            <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg transform hover:scale-110 transition-all duration-300">
-              <img
-                src={featuredStory.originalPhotoURL}
-                alt="Original photo"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                <span className="text-white text-sm font-medium">Orijinal Fotoğraf</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6 p-6">
-            {/* Sol Taraf - Görsel */}
-            <div className="relative aspect-[4/3] rounded-xl overflow-hidden group">
-              <img
-                src={featuredStory.thumbnailURL}
-                alt={featuredStory.title}
-                className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-300"
-              />
-              
-              {/* Overlay with buttons */}
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                <button
-                  onClick={() => handleReadStory(featuredStory.id, featuredStory.title)}
-                  className="px-6 py-3 bg-white text-gray-900 rounded-full flex items-center gap-2 hover:bg-gray-100 transition-colors text-lg"
-                >
-                  <Eye className="w-5 h-5" />
-                  <span>Oku</span>
-                </button>
-                <button 
-                  onClick={() => handleUseTemplate(featuredStory.id)}
-                  className="px-6 py-3 bg-blue-500 text-white rounded-full flex items-center gap-2 hover:bg-blue-600 transition-colors text-lg"
-                >
-                  <Wand2 className="w-5 h-5" />
-                  <span>Taslağı Kullan</span>
-                </button>
+          <div className="relative rounded-3xl overflow-hidden bg-white shadow-xl">
+            <div className="absolute top-6 left-6 z-20">
+              <div className="flex items-center gap-2 bg-yellow-400 text-white px-4 py-2 rounded-full shadow-lg">
+                <Crown className="w-5 h-5" />
+                <span className="font-medium">Haftanın Masalı</span>
               </div>
             </div>
 
-            {/* Sağ Taraf - İçerik */}
-            <div className="flex flex-col justify-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-3">{featuredStory.title}</h2>
-              <p className="text-gray-600 mb-6">{featuredStory.description}</p>
-              
-              {/* Theme Tags */}
-              <div className="flex flex-wrap gap-2 mb-6">
-                {featuredStory.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700"
+            <div className="grid lg:grid-cols-2 gap-8 p-8">
+              <div className="relative aspect-[4/3] rounded-2xl overflow-hidden group">
+                <img
+                  src={featuredStory.thumbnailURL}
+                  alt={featuredStory.title}
+                  className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
+                />
+                <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/80 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                
+                <div className="absolute inset-x-0 bottom-0 p-6 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <button
+                    onClick={() => handleReadStory(featuredStory.id, featuredStory.title)}
+                    className="px-6 py-3 bg-white text-gray-900 rounded-full flex items-center gap-2 hover:bg-gray-100 transition-all transform hover:scale-105 shadow-lg"
                   >
-                    <Star className="w-4 h-4" />
-                    {tag}
-                  </span>
-                ))}
+                    <Eye className="w-5 h-5" />
+                    <span>Oku</span>
+                  </button>
+                  <button 
+                    onClick={() => handleUseTemplate(featuredStory.id)}
+                    className="px-6 py-3 bg-blue-500 text-white rounded-full flex items-center gap-2 hover:bg-blue-600 transition-all transform hover:scale-105 shadow-lg"
+                  >
+                    <Wand2 className="w-5 h-5" />
+                    <span>Taslağı Kullan</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex flex-col justify-center lg:pr-8">
+                <h2 className="text-3xl font-bold text-gray-900 mb-4">{featuredStory.title}</h2>
+                <p className="text-gray-600 text-lg mb-6">{featuredStory.description}</p>
+                
+                <div className="flex flex-wrap gap-2 mb-8">
+                  {featuredStory.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium bg-blue-50 text-blue-600"
+                    >
+                      <Star className="w-4 h-4" />
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
                 <button
                   onClick={() => handleReadStory(featuredStory.id, featuredStory.title)}
-                  className="flex-1 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl flex items-center justify-center gap-2 hover:from-blue-600 hover:to-blue-700 transition-colors"
+                  className="flex items-center justify-center gap-2 w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-2xl hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-[1.02] shadow-lg group"
                 >
-                  <Eye className="w-5 h-5" />
+                  <BookOpen className="w-5 h-5" />
                   <span>Hemen Oku</span>
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
               </div>
             </div>
@@ -202,82 +198,86 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Diğer Hikayeler */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {regularStories.map((story) => (
-          <div
-            key={story.id}
-            className="group relative bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300"
-          >
-            {/* Original Photo Circle */}
-            <div className="absolute -top-4 -left-4 z-20 group-hover:top-4 group-hover:left-4 transition-all duration-300">
-              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-lg transform -rotate-12 group-hover:rotate-0 transition-all duration-300 hover:scale-110">
-                <img
-                  src={story.originalPhotoURL}
-                  alt="Original photo"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="absolute -bottom-1 right-0 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium text-gray-600 shadow-sm transform -rotate-12 opacity-0 group-hover:opacity-100 group-hover:rotate-0 transition-all duration-300">
-                Orijinal
-              </div>
-            </div>
-
-            {/* Thumbnail */}
-            <div className="aspect-video relative overflow-hidden">
-              <img
-                src={story.thumbnailURL}
-                alt={story.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
+      {/* Regular Stories */}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-8 flex items-center gap-2">
+          <Sparkles className="w-6 h-6 text-blue-500" />
+          Diğer Masallar
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {regularStories.map((story) => (
+            <div
+              key={story.id}
+              className="group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300"
+            >
+              <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl blur opacity-20 group-hover:opacity-30 transition-opacity" />
               
-              {/* Overlay with buttons */}
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                <button
-                  onClick={() => handleReadStory(story.id, story.title)}
-                  className="px-4 py-2 bg-white text-gray-900 rounded-full flex items-center gap-2 hover:bg-gray-100 transition-colors"
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>Oku</span>
-                </button>
-                <button 
-                  onClick={() => handleUseTemplate(story.id)}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-full flex items-center gap-2 hover:bg-blue-600 transition-colors"
-                >
-                  <Wand2 className="w-4 h-4" />
-                  <span>Taslağı Kullan</span>
-                </button>
-              </div>
-            </div>
+              <div className="relative">
+                <div className="absolute -top-4 -left-4 z-20 group-hover:top-4 group-hover:left-4 transition-all duration-500">
+                  <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-lg transform -rotate-12 group-hover:rotate-0 transition-all duration-500 hover:scale-110">
+                    <img
+                      src={story.originalPhotoURL}
+                      alt="Original"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                </div>
 
-            {/* Content */}
-            <div className="p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">{story.title}</h3>
-              
-              {/* Theme Tags */}
-              <div className="flex flex-wrap gap-2">
-                {story.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-600"
-                  >
-                    {tag}
-                  </span>
-                ))}
+                <div className="aspect-[3/2] relative overflow-hidden">
+                  <img
+                    src={story.thumbnailURL}
+                    alt={story.title}
+                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
+                  />
+                  
+                  <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/80 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  
+                  <div className="absolute inset-x-0 bottom-0 p-6 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <button
+                      onClick={() => handleReadStory(story.id, story.title)}
+                      className="px-4 py-2 bg-white text-gray-900 rounded-full flex items-center gap-2 hover:bg-gray-100 transition-all transform hover:scale-105 shadow-lg"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>Oku</span>
+                    </button>
+                    <button 
+                      onClick={() => handleUseTemplate(story.id)}
+                      className="px-4 py-2 bg-blue-500 text-white rounded-full flex items-center gap-2 hover:bg-blue-600 transition-all transform hover:scale-105 shadow-lg"
+                    >
+                      <Wand2 className="w-4 h-4" />
+                      <span>Taslağı Kullan</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">{story.title}</h3>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {story.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-50 text-blue-600"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
-      {/* Loading Modal */}
+      {/* Modals */}
       <StoryLoadingModal
         isOpen={isLoading}
         onComplete={handleLoadingComplete}
         storyTitle={loadingStoryTitle}
       />
 
-      {/* Story Reader Modal */}
       {currentStory && (
         <StoryReader
           story={currentStory}
@@ -286,7 +286,6 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Story Template Modal */}
       {currentTemplate && (
         <StoryTemplateModal
           story={currentTemplate}
