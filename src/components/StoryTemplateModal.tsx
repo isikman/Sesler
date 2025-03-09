@@ -17,13 +17,6 @@ interface TransformResponse {
   message: string;
 }
 
-interface TransformStatusResponse {
-  success: boolean;
-  transformedImageUrl?: string;
-  message: string;
-  error?: string;
-}
-
 export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemplateModalProps) {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -40,55 +33,16 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   const [isDragging, setIsDragging] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [transformStatus, setTransformStatus] = useState<string | null>(null);
-  const [transformError, setTransformError] = useState<string | null>(null);
-  const statusCheckInterval = useRef<NodeJS.Timeout>();
 
-  const checkTransformStatus = async () => {
-    try {
-      console.log('Checking transform status...');
-      const response = await fetch('/.netlify/functions/photo-transform-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': import.meta.env.VITE_MAKE_WEBHOOK_API_KEY
-        },
-        body: JSON.stringify({
-          userId: user?.uid,
-          templateId: story.id
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Status check failed: ${response.status}`);
-      }
-
-      const data = await response.json() as TransformStatusResponse;
-      console.log('Transform status response:', data);
-      
-      if (data.success && data.transformedImageUrl) {
-        console.log('Transform successful, setting URL:', data.transformedImageUrl);
-        setTransformedUrl(data.transformedImageUrl);
-        setTransformStatus(null);
-        setIsTransforming(false);
-        clearInterval(statusCheckInterval.current);
-        toast.success('Fotoğraf başarıyla dönüştürüldü');
-      } else if (!data.success) {
-        console.log('Transform failed:', data.message);
-        setTransformError(data.message);
-        setIsTransforming(false);
-        clearInterval(statusCheckInterval.current);
-        toast.error(data.message || 'Görsel uygun bulunmadı');
-      } else {
-        console.log('Transform still in progress');
-        setTransformStatus('Dönüşüm işlemi devam ediyor...');
-      }
-    } catch (error) {
-      console.error('Status check error:', error);
-      setTransformError('Dönüşüm durumu kontrol edilirken bir hata oluştu');
-      setIsTransforming(false);
-      clearInterval(statusCheckInterval.current);
-      toast.error('Dönüşüm durumu kontrol edilirken bir hata oluştu');
+  const handleFileChange = (file: File) => {
+    if (file) {
+      setFormData(prev => ({ ...prev, photo: file }));
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+        setTransformedUrl(null);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -99,9 +53,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
     }
 
     setIsTransforming(true);
-    setTransformStatus('Dönüşüm başlatılıyor...');
-    setTransformError(null);
-    setTransformedUrl(null);
 
     try {
       const formDataToSend = new FormData();
@@ -112,7 +63,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       formDataToSend.append('childAge', formData.age);
       formDataToSend.append('childGender', formData.gender);
 
-      console.log('Sending transform request...');
       const response = await fetch(import.meta.env.VITE_PHOTO_TRANSFORM_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -122,53 +72,68 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       });
 
       if (!response.ok) {
-        throw new Error(`Transform request failed: ${response.status}`);
+        throw new Error('Dönüştürme isteği başarısız oldu');
       }
 
-      const data = await response.json() as TransformResponse;
-      console.log('Transform response:', data);
-      
+      const data: TransformResponse = await response.json();
+
       if (!data.success) {
-        throw new Error(data.message || 'Dönüştürme işlemi başlatılamadı');
+        throw new Error(data.message);
       }
 
-      setTransformStatus('Dönüşüm işlemi başladı. Lütfen bekleyin...');
-      toast.success('Fotoğraf dönüştürme işlemi başlatıldı');
+      // Dönüşüm durumunu kontrol et
+      let transformCheckCount = 0;
+      const maxChecks = 20; // Maksimum 1 dakika (3 saniye * 20)
+      
+      const checkStatus = async () => {
+        try {
+          const statusResponse = await fetch('/.netlify/functions/photo-transform-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': import.meta.env.VITE_MAKE_WEBHOOK_API_KEY
+            },
+            body: JSON.stringify({
+              userId: user.uid,
+              templateId: story.id
+            })
+          });
 
-      // Status kontrolünü başlat
-      if (statusCheckInterval.current) {
-        clearInterval(statusCheckInterval.current);
-      }
-      statusCheckInterval.current = setInterval(checkTransformStatus, 3000);
+          if (!statusResponse.ok) {
+            throw new Error('Durum kontrolü başarısız oldu');
+          }
+
+          const statusData = await statusResponse.json();
+
+          if (statusData.success && statusData.transformedImageUrl) {
+            setTransformedUrl(statusData.transformedImageUrl);
+            setIsTransforming(false);
+            toast.success('Fotoğraf başarıyla dönüştürüldü');
+            return;
+          }
+
+          if (!statusData.success) {
+            throw new Error(statusData.message || 'Dönüştürme işlemi başarısız oldu');
+          }
+
+          transformCheckCount++;
+          if (transformCheckCount < maxChecks) {
+            setTimeout(checkStatus, 3000); // 3 saniye sonra tekrar kontrol et
+          } else {
+            throw new Error('Dönüştürme işlemi zaman aşımına uğradı');
+          }
+        } catch (error) {
+          setIsTransforming(false);
+          toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
+        }
+      };
+
+      // İlk durum kontrolünü başlat
+      setTimeout(checkStatus, 3000);
 
     } catch (error) {
-      console.error('Transform error:', error);
-      setTransformError(error instanceof Error ? error.message : 'Bir hata oluştu');
       setIsTransforming(false);
-      toast.error('Fotoğraf dönüştürülürken bir hata oluştu');
-    }
-  };
-
-  // Component unmount olduğunda interval'i temizle
-  React.useEffect(() => {
-    return () => {
-      if (statusCheckInterval.current) {
-        clearInterval(statusCheckInterval.current);
-      }
-    };
-  }, []);
-
-  const handleFileChange = (file: File) => {
-    if (file) {
-      setFormData(prev => ({ ...prev, photo: file }));
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
-        setTransformedUrl(null);
-        setTransformError(null);
-        setTransformStatus(null);
-      };
-      reader.readAsDataURL(file);
+      toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
     }
   };
 
@@ -203,7 +168,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
         story.id,
         formData.childName,
         formData.age,
-        formData.gender as 'male' | 'female',
+        formData.gender,
         transformedUrl
       );
 
@@ -362,8 +327,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
                             setPreviewUrl(null);
                             setTransformedUrl(null);
                             setFormData(prev => ({ ...prev, photo: null }));
-                            setTransformError(null);
-                            setTransformStatus(null);
                           }}
                           className="absolute top-2 right-2 p-1 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
                         >
@@ -415,8 +378,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
                   <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
                     <button
                       onClick={handleTransform}
-                      disabled={isTransforming}
-                      className="w-20 h-20 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 text-white flex items-center justify-center hover:from-purple-600 hover:to-purple-700 transition-all group disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-purple-200 hover:scale-110"
+                      className="w-20 h-20 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 text-white flex items-center justify-center hover:from-purple-600 hover:to-purple-700 transition-all group shadow-lg hover:shadow-purple-200 hover:scale-110"
                     >
                       <Wand2 className="w-8 h-8 group-hover:rotate-12 transition-transform" />
                     </button>
@@ -465,18 +427,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
               )}
             </button>
           </div>
-
-          {transformStatus && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium">
-              {transformStatus}
-            </div>
-          )}
-
-          {transformError && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-50 text-red-700 px-4 py-2 rounded-full text-sm font-medium">
-              {transformError}
-            </div>
-          )}
         </div>
       </div>
     </div>
