@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, Sparkles, ChevronRight, ChevronLeft, Camera, Info, Wand2 } from 'lucide-react';
 import { Story } from '../types/story';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import { paymentService } from '../services/paymentService';
 import { useNavigate } from 'react-router-dom';
-import { ref, get } from 'firebase/database';
+import { ref, onValue, off } from 'firebase/database';
 import { database } from '../lib/firebase';
 
 interface StoryTemplateModalProps {
@@ -35,42 +35,16 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   const [isDragging, setIsDragging] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const statusCheckInterval = useRef<NodeJS.Timeout>();
+  const transformListenerRef = useRef<() => void>();
 
-  const checkTransformStatus = async () => {
-    if (!user?.email) return;
-    
-    try {
-      // Email'i Firebase path için güvenli hale getir
-      const safeEmail = user.email.replace(/[.#$[\]]/g, '_');
-      const transformRef = ref(database, `transformations/${safeEmail}/${story.id}`);
-      const snapshot = await get(transformRef);
-
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        
-        if (data.status === 'completed' && data.transformedImageUrl) {
-          setTransformedUrl(data.transformedImageUrl);
-          setIsTransforming(false);
-          toast.success('Fotoğraf başarıyla dönüştürüldü');
-          
-          // Durum kontrolünü durdur
-          if (statusCheckInterval.current) {
-            clearInterval(statusCheckInterval.current);
-          }
-        } else if (data.status === 'failed') {
-          setIsTransforming(false);
-          toast.error(data.error || 'Dönüştürme işlemi başarısız oldu');
-          
-          if (statusCheckInterval.current) {
-            clearInterval(statusCheckInterval.current);
-          }
-        }
+  useEffect(() => {
+    return () => {
+      // Cleanup listener on unmount
+      if (transformListenerRef.current) {
+        transformListenerRef.current();
       }
-    } catch (error) {
-      console.error('Transform status check error:', error);
-    }
-  };
+    };
+  }, []);
 
   const handleFileChange = (file: File) => {
     if (file) {
@@ -84,102 +58,85 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
     }
   };
 
-const handleTransform = async () => {
-  if (!formData.photo || !user?.email || !formData.childName || !formData.age || !formData.gender) {
-    toast.error('Lütfen tüm bilgileri doldurun');
-    return;
-  }
-
-  setIsTransforming(true);
-  try {
-    // Email'i Firebase path için güvenli hale getir
-    const safeEmail = user.email.replace(/[.#$[\]]/g, '_');
-    
-    const formDataToSend = new FormData();
-    formDataToSend.append('photo', formData.photo);
-    formDataToSend.append('email', user.email);
-    formDataToSend.append('templateId', story.id);
-    formDataToSend.append('childName', formData.childName);
-    formDataToSend.append('childAge', formData.age);
-    formDataToSend.append('childGender', formData.gender);
-
-    const response = await fetch(import.meta.env.VITE_PHOTO_TRANSFORM_WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'X-API-Key': import.meta.env.VITE_MAKE_WEBHOOK_API_KEY
-      },
-      body: formDataToSend
-    });
-
-    if (!response.ok) {
-      throw new Error('Dönüştürme isteği başarısız oldu');
+  const handleTransform = async () => {
+    if (!formData.photo || !user?.email || !formData.childName || !formData.age || !formData.gender) {
+      toast.error('Lütfen tüm bilgileri doldurun');
+      return;
     }
 
-    const data = await response.json();
-    if (!data.success) {
-      throw new Error(data.message || 'Dönüştürme işlemi başarısız oldu');
-    }
+    setIsTransforming(true);
+    try {
+      // Email'i Firebase path için güvenli hale getir
+      const safeEmail = user.email.replace(/[.#$[\]]/g, '_');
+      
+      const formDataToSend = new FormData();
+      formDataToSend.append('photo', formData.photo);
+      formDataToSend.append('email', user.email);
+      formDataToSend.append('templateId', story.id);
+      formDataToSend.append('childName', formData.childName);
+      formDataToSend.append('childAge', formData.age);
+      formDataToSend.append('childGender', formData.gender);
 
-    // Dönüşüm başlatıldı, durumu kontrol etmeye başla
-    toast.success('Dönüştürme işlemi başlatıldı');
-    
-    // Her 2 saniyede bir dönüşüm durumunu kontrol et
-    statusCheckInterval.current = setInterval(async () => {
-      try {
-        const transformRef = ref(database, `transformations/${safeEmail}/${story.id}`);
-        const snapshot = await get(transformRef);
+      // Firebase listener'ı başlat
+      const transformRef = ref(database, `transformations/${safeEmail}/${story.id}`);
+      
+      // Önceki listener'ı temizle
+      if (transformListenerRef.current) {
+        transformListenerRef.current();
+      }
 
+      // Yeni listener'ı ayarla
+      transformListenerRef.current = onValue(transformRef, (snapshot) => {
         if (snapshot.exists()) {
-          const transformData = snapshot.val();
-          
-          if (transformData.status === 'completed' && transformData.transformedImageUrl) {
-            setTransformedUrl(transformData.transformedImageUrl);
+          const data = snapshot.val();
+          if (data.status === 'completed' && data.transformedImageUrl) {
+            setTransformedUrl(data.transformedImageUrl);
             setIsTransforming(false);
             toast.success('Fotoğraf başarıyla dönüştürüldü');
-            
-            if (statusCheckInterval.current) {
-              clearInterval(statusCheckInterval.current);
+            // Listener'ı temizle
+            if (transformListenerRef.current) {
+              transformListenerRef.current();
             }
-          } else if (transformData.status === 'failed') {
+          } else if (data.status === 'failed') {
             setIsTransforming(false);
-            toast.error(transformData.error || 'Dönüştürme işlemi başarısız oldu');
-            
-            if (statusCheckInterval.current) {
-              clearInterval(statusCheckInterval.current);
+            toast.error(data.error || 'Dönüştürme işlemi başarısız oldu');
+            if (transformListenerRef.current) {
+              transformListenerRef.current();
             }
           }
         }
-      } catch (error) {
-        console.error('Transform status check error:', error);
-      }
-    }, 2000);
+      });
 
-    // 30 saniye sonra kontrolleri durdur
-    setTimeout(() => {
-      if (statusCheckInterval.current) {
-        clearInterval(statusCheckInterval.current);
-        if (isTransforming) {
-          setIsTransforming(false);
-          toast.error('Dönüştürme işlemi zaman aşımına uğradı');
-        }
-      }
-    }, 30000);
+      const response = await fetch(import.meta.env.VITE_PHOTO_TRANSFORM_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': import.meta.env.VITE_MAKE_WEBHOOK_API_KEY
+        },
+        body: formDataToSend
+      });
 
-  } catch (error) {
-    console.error('Transform error:', error);
-    setIsTransforming(false);
-    toast.error(error instanceof Error ? error.message : 'Fotoğraf dönüştürülürken bir hata oluştu');
-  }
-};
-
-  // Component unmount olduğunda interval'i temizle
-  React.useEffect(() => {
-    return () => {
-      if (statusCheckInterval.current) {
-        clearInterval(statusCheckInterval.current);
+      if (!response.ok) {
+        throw new Error('Dönüştürme isteği başarısız oldu');
       }
-    };
-  }, []);
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message || 'Dönüştürme işlemi başarısız oldu');
+      }
+
+      toast.success('Dönüştürme işlemi başlatıldı');
+
+    } catch (error) {
+      console.error('Transform error:', error);
+      setIsTransforming(false);
+      toast.error(error instanceof Error ? error.message : 'Fotoğraf dönüştürülürken bir hata oluştu');
+      
+      // Hata durumunda listener'ı temizle
+      if (transformListenerRef.current) {
+        transformListenerRef.current();
+      }
+    }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
