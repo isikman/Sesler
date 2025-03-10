@@ -1,10 +1,22 @@
 import { Handler } from '@netlify/functions';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getDatabase } from 'firebase-admin/database';
 
-interface TransformStatusPayload {
-  success: boolean;
-  transformedImageUrl?: string;
-  error?: string;
-  message?: string;
+// Firebase Admin yapılandırması
+const app = initializeApp({
+  credential: cert({
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+  }),
+  databaseURL: process.env.VITE_FIREBASE_DATABASE_URL
+});
+
+const database = getDatabase(app);
+
+interface TransformStatusRequest {
+  userId: string;
+  templateId: string;
 }
 
 export const handler: Handler = async (event) => {
@@ -25,22 +37,74 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const payload = JSON.parse(event.body || '{}') as TransformStatusPayload;
+    const { userId, templateId } = JSON.parse(event.body || '{}') as TransformStatusRequest;
 
+    if (!userId || !templateId) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          success: false,
+          message: 'Missing required fields: userId or templateId'
+        })
+      };
+    }
+
+    // Firebase'den dönüşüm durumunu kontrol et
+    const transformRef = database.ref(`transformations/${userId}/${templateId}`);
+    const snapshot = await transformRef.get();
+
+    if (!snapshot.exists()) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          message: 'Transform is still in progress'
+        })
+      };
+    }
+
+    const transformData = snapshot.val();
+
+    // Dönüşüm tamamlandıysa
+    if (transformData.status === 'completed') {
+      // Dönüşüm kaydını sil (bir kere kullanılacak)
+      await transformRef.remove();
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          transformedImageUrl: transformData.transformedImageUrl,
+          message: 'Transform completed successfully'
+        })
+      };
+    }
+
+    // Dönüşüm başarısız olduysa
+    if (transformData.status === 'failed') {
+      // Dönüşüm kaydını sil
+      await transformRef.remove();
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: false,
+          message: transformData.error || 'Transform failed'
+        })
+      };
+    }
+
+    // Dönüşüm hala devam ediyor
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      },
       body: JSON.stringify({
-        success: payload.success,
-        transformedImageUrl: payload.transformedImageUrl,
-        message: payload.message || (payload.success ? 'Fotoğraf başarıyla dönüştürüldü' : 'Görsel uygun bulunmadı. Lütfen yeni görsel yükleyin.'),
-        error: payload.error
+        success: true,
+        message: 'Transform is still in progress'
       })
     };
+
   } catch (error) {
-    console.error('Transform status webhook error:', error);
+    console.error('Transform status check error:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({

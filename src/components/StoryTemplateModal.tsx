@@ -5,6 +5,8 @@ import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import { paymentService } from '../services/paymentService';
 import { useNavigate } from 'react-router-dom';
+import { ref, set } from 'firebase/database';
+import { database } from '../lib/firebase';
 
 interface StoryTemplateModalProps {
   story: Story;
@@ -32,7 +34,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   const [transformedUrl, setTransformedUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
-  const [transformStatus, setTransformStatus] = useState<'checking' | 'processing' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFileChange = (file: File) => {
@@ -48,15 +49,23 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   };
 
   const handleTransform = async () => {
-    if (!formData.photo || !user?.email || !formData.childName || !formData.age || !formData.gender) {
+    if (!formData.photo || !user?.uid || !formData.childName || !formData.age || !formData.gender) {
       toast.error('Lütfen tüm bilgileri doldurun');
       return;
     }
 
     setIsTransforming(true);
-    setTransformStatus('checking');
 
     try {
+      // Firebase'de checking statüsünde kayıt oluştur
+      const transformRef = ref(database, `transformations/${user.uid}/${story.id}`);
+      await set(transformRef, {
+        status: 'checking',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      // Make.com webhook'una fotoğrafı gönder
       const formDataToSend = new FormData();
       formDataToSend.append('photo', formData.photo);
       formDataToSend.append('email', user.email);
@@ -64,8 +73,8 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       formDataToSend.append('childName', formData.childName);
       formDataToSend.append('childAge', formData.age);
       formDataToSend.append('childGender', formData.gender);
+      formDataToSend.append('userId', user.uid);
 
-      // Make.com webhook'una fotoğrafı gönder
       const response = await fetch(import.meta.env.VITE_PHOTO_TRANSFORM_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -78,17 +87,12 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
         throw new Error('Dönüştürme isteği başarısız oldu');
       }
 
-      const data: TransformResponse = await response.json();
-
+      const data = await response.json();
       if (!data.success) {
         throw new Error(data.message);
       }
 
-      // Başarılı yanıt geldi, durumu güncelle
-      setTransformStatus('processing');
-      toast.success('Dönüşüm işlemi başlatıldı');
-
-      // Netlify function'dan yanıt bekle
+      // Durum kontrolünü başlat
       const checkTransformStatus = async () => {
         try {
           const statusResponse = await fetch('/.netlify/functions/photo-transform-status', {
@@ -112,31 +116,27 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
           if (statusData.success && statusData.transformedImageUrl) {
             setTransformedUrl(statusData.transformedImageUrl);
             setIsTransforming(false);
-            setTransformStatus(null);
             toast.success('Fotoğraf başarıyla dönüştürüldü');
             return;
           }
 
-          // Hata durumu
           if (!statusData.success) {
-            throw new Error(statusData.message || 'Dönüştürme işlemi başarısız oldu');
+            throw new Error(statusData.message);
           }
 
-          // Hala işlem devam ediyor, 3 saniye sonra tekrar kontrol et
+          // İşlem devam ediyor, 3 saniye sonra tekrar kontrol et
           setTimeout(checkTransformStatus, 3000);
         } catch (error) {
           setIsTransforming(false);
-          setTransformStatus(null);
           toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
         }
       };
 
       // İlk durum kontrolünü başlat
-      setTimeout(checkTransformStatus, 3000);
+      setTimeout(checkTransformStatus, 2000);
 
     } catch (error) {
       setIsTransforming(false);
-      setTransformStatus(null);
       toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
     }
   };
@@ -183,6 +183,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       toast.success('Hikayeniz oluşturulmaya başlandı! Masallarım sayfasından takip edebilirsiniz.');
       onClose();
       
+      // Yönlendirme öncesi kısa bir gecikme ekle
       setTimeout(() => {
         navigate('/my-stories');
       }, 1500);
@@ -359,9 +360,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
                   {isTransforming ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50">
                       <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin mb-4"></div>
-                      <p className="text-gray-600 font-medium">
-                        {transformStatus === 'checking' ? 'Fotoğraf Kontrol Ediliyor...' : 'Dönüşüm İşlemi Devam Ediyor...'}
-                      </p>
+                      <p className="text-gray-600 font-medium">Fotoğraf Dönüştürülüyor...</p>
                       <p className="text-sm text-gray-500 mt-2">Lütfen bekleyin</p>
                     </div>
                   ) : transformedUrl ? (
@@ -380,17 +379,24 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
                   )}
                 </div>
 
-                {previewUrl && !transformedUrl && !isTransforming && (
+                {previewUrl && !transformedUrl && (
                   <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
                     <button
                       onClick={handleTransform}
-                      className="w-20 h-20 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 text-white flex items-center justify-center hover:from-purple-600 hover:to-purple-700 transition-all group shadow-lg hover:shadow-purple-200 hover:scale-110"
+                      disabled={isTransforming}
+                      className="w-20 h-20 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 text-white flex items-center justify-center hover:from-purple-600 hover:to-purple-700 transition-all group disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-purple-200 hover:scale-110"
                     >
-                      <Wand2 className="w-8 h-8 group-hover:rotate-12 transition-transform" />
+                      {isTransforming ? (
+                        <div className="w-8 h-8 border-3 border-white/20 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <Wand2 className="w-8 h-8 group-hover:rotate-12 transition-transform" />
+                      )}
                     </button>
-                    <p className="absolute top-full left-1/2 -translate-x-1/2 mt-2 text-sm font-medium text-gray-600 whitespace-nowrap">
-                      Dönüştürmek için tıkla
-                    </p>
+                    {!isTransforming && (
+                      <p className="absolute top-full left-1/2 -translate-x-1/2 mt-2 text-sm font-medium text-gray-600 whitespace-nowrap">
+                        Dönüştürmek için tıkla
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
