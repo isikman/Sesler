@@ -15,10 +15,11 @@ const app = initializeApp({
 const database = getDatabase(app);
 
 interface TransformWebhookPayload {
-  type: 'start' | 'complete' | 'error';
+  type: string;
   data: {
-    userId: string;
-    templateId: string;
+    userEmail?: string;
+    templateId?: string;
+    userId?: string;
     transformedImageUrl?: string;
     error?: string;
   };
@@ -46,7 +47,7 @@ export const handler: Handler = async (event) => {
     console.log('Received webhook payload:', payload);
 
     // Gerekli alanları kontrol et
-    if (!payload.type || !payload.data?.userId || !payload.data?.templateId) {
+    if (!payload.type || !payload.data) {
       return {
         statusCode: 400,
         body: JSON.stringify({
@@ -56,15 +57,27 @@ export const handler: Handler = async (event) => {
       };
     }
 
+    // userId ve templateId'yi payload'dan al
     const { userId, templateId } = payload.data;
+
+    // userId ve templateId kontrolü
+    if (!userId || !templateId) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          success: false,
+          message: 'Missing userId or templateId'
+        })
+      };
+    }
+
     const transformRef = database.ref(`transformations/${userId}/${templateId}`);
 
     switch (payload.type) {
       case 'start':
         // Dönüşüm başlangıcı
-        await transformRef.set({
+        await transformRef.update({
           status: 'processing',
-          createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
 
@@ -88,7 +101,7 @@ export const handler: Handler = async (event) => {
           };
         }
 
-        await transformRef.set({
+        await transformRef.update({
           status: 'completed',
           transformedImageUrl: payload.data.transformedImageUrl,
           updatedAt: new Date().toISOString()
@@ -104,7 +117,7 @@ export const handler: Handler = async (event) => {
 
       case 'error':
         // Hata durumu
-        await transformRef.set({
+        await transformRef.update({
           status: 'failed',
           error: payload.data.error || 'Unknown error occurred',
           updatedAt: new Date().toISOString()
