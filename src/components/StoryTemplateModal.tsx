@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import { paymentService } from '../services/paymentService';
 import { useNavigate } from 'react-router-dom';
-import { ref, set } from 'firebase/database';
+import { ref, get } from 'firebase/database';
 import { database } from '../lib/firebase';
 
 interface StoryTemplateModalProps {
@@ -35,6 +35,42 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   const [isDragging, setIsDragging] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const statusCheckInterval = useRef<NodeJS.Timeout>();
+
+  const checkTransformStatus = async () => {
+    if (!user?.email) return;
+    
+    try {
+      // Email'i Firebase path için güvenli hale getir
+      const safeEmail = user.email.replace(/[.#$[\]]/g, '_');
+      const transformRef = ref(database, `transformations/${safeEmail}/${story.id}`);
+      const snapshot = await get(transformRef);
+
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        
+        if (data.status === 'completed' && data.transformedImageUrl) {
+          setTransformedUrl(data.transformedImageUrl);
+          setIsTransforming(false);
+          toast.success('Fotoğraf başarıyla dönüştürüldü');
+          
+          // Durum kontrolünü durdur
+          if (statusCheckInterval.current) {
+            clearInterval(statusCheckInterval.current);
+          }
+        } else if (data.status === 'failed') {
+          setIsTransforming(false);
+          toast.error(data.error || 'Dönüştürme işlemi başarısız oldu');
+          
+          if (statusCheckInterval.current) {
+            clearInterval(statusCheckInterval.current);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Transform status check error:', error);
+    }
+  };
 
   const handleFileChange = (file: File) => {
     if (file) {
@@ -49,7 +85,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   };
 
   const handleTransform = async () => {
-    if (!formData.photo || !user?.uid || !formData.childName || !formData.age || !formData.gender) {
+    if (!formData.photo || !user?.email || !formData.childName || !formData.age || !formData.gender) {
       toast.error('Lütfen tüm bilgileri doldurun');
       return;
     }
@@ -57,15 +93,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
     setIsTransforming(true);
 
     try {
-      // Firebase'de checking statüsünde kayıt oluştur
-      const transformRef = ref(database, `transformations/${user.uid}/${story.id}`);
-      await set(transformRef, {
-        status: 'checking',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-
-      // Make.com webhook'una fotoğrafı gönder
       const formDataToSend = new FormData();
       formDataToSend.append('photo', formData.photo);
       formDataToSend.append('email', user.email);
@@ -73,7 +100,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       formDataToSend.append('childName', formData.childName);
       formDataToSend.append('childAge', formData.age);
       formDataToSend.append('childGender', formData.gender);
-      formDataToSend.append('userId', user.uid);
 
       const response = await fetch(import.meta.env.VITE_PHOTO_TRANSFORM_WEBHOOK_URL, {
         method: 'POST',
@@ -92,54 +118,34 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
         throw new Error(data.message);
       }
 
-      // Durum kontrolünü başlat
-      const checkTransformStatus = async () => {
-        try {
-          const statusResponse = await fetch('/.netlify/functions/photo-transform-status', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-API-Key': import.meta.env.VITE_MAKE_WEBHOOK_API_KEY
-            },
-            body: JSON.stringify({
-              userId: user.uid,
-              templateId: story.id
-            })
-          });
+      // Her 2 saniyede bir dönüşüm durumunu kontrol et
+      statusCheckInterval.current = setInterval(checkTransformStatus, 2000);
 
-          if (!statusResponse.ok) {
-            throw new Error('Durum kontrolü başarısız oldu');
-          }
-
-          const statusData = await statusResponse.json();
-
-          if (statusData.success && statusData.transformedImageUrl) {
-            setTransformedUrl(statusData.transformedImageUrl);
+      // 30 saniye sonra kontrolleri durdur
+      setTimeout(() => {
+        if (statusCheckInterval.current) {
+          clearInterval(statusCheckInterval.current);
+          if (isTransforming) {
             setIsTransforming(false);
-            toast.success('Fotoğraf başarıyla dönüştürüldü');
-            return;
+            toast.error('Dönüştürme işlemi zaman aşımına uğradı');
           }
-
-          if (!statusData.success) {
-            throw new Error(statusData.message);
-          }
-
-          // İşlem devam ediyor, 3 saniye sonra tekrar kontrol et
-          setTimeout(checkTransformStatus, 3000);
-        } catch (error) {
-          setIsTransforming(false);
-          toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
         }
-      };
-
-      // İlk durum kontrolünü başlat
-      setTimeout(checkTransformStatus, 2000);
+      }, 30000);
 
     } catch (error) {
       setIsTransforming(false);
       toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
     }
   };
+
+  // Component unmount olduğunda interval'i temizle
+  React.useEffect(() => {
+    return () => {
+      if (statusCheckInterval.current) {
+        clearInterval(statusCheckInterval.current);
+      }
+    };
+  }, []);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -183,7 +189,6 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       toast.success('Hikayeniz oluşturulmaya başlandı! Masallarım sayfasından takip edebilirsiniz.');
       onClose();
       
-      // Yönlendirme öncesi kısa bir gecikme ekle
       setTimeout(() => {
         navigate('/my-stories');
       }, 1500);
