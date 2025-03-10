@@ -163,40 +163,45 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
     }
   };
 
-  const handleSubmit = async () => {
-    if (!user || !formData.photo || !transformedUrl) {
-      toast.error('Lütfen tüm bilgileri doldurun');
-      return;
+const handleSubmit = async () => {
+  if (!user || !formData.photo || !transformedUrl) {
+    toast.error('Lütfen tüm bilgileri doldurun');
+    return;
+  }
+
+  setIsSubmitting(true);
+  try {
+    // transformRef.current'dan transformId'yi al
+    const transformId = transformRef.current?.key?.split('/').pop();
+    
+    const response = await paymentService.initiatePayment(
+      user,
+      story.id,
+      formData.childName,
+      formData.age,
+      formData.gender,
+      transformedUrl,
+      transformId // transformId'yi ekledik
+    );
+
+    if (!response.success) {
+      throw new Error(response.error || 'Hikaye oluşturma başlatılamadı');
     }
 
-    setIsSubmitting(true);
-    try {
-      const response = await paymentService.initiatePayment(
-        user,
-        story.id,
-        formData.childName,
-        formData.age,
-        formData.gender,
-        transformedUrl
-      );
+    toast.success('Hikayeniz oluşturulmaya başlandı! Masallarım sayfasından takip edebilirsiniz.');
+    onClose();
+    
+    setTimeout(() => {
+      navigate('/my-stories');
+    }, 1500);
+  } catch (error) {
+    console.error('Story creation error:', error);
+    toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
-      if (!response.success) {
-        throw new Error(response.error || 'Hikaye oluşturma başlatılamadı');
-      }
-
-      toast.success('Hikayeniz oluşturulmaya başlandı! Masallarım sayfasından takip edebilirsiniz.');
-      onClose();
-      
-      setTimeout(() => {
-        navigate('/my-stories');
-      }, 1500);
-    } catch (error) {
-      console.error('Story creation error:', error);
-      toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // Cleanup effect
   React.useEffect(() => {
