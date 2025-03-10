@@ -1,22 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Upload, Sparkles, ChevronRight, ChevronLeft, Camera, Info, Wand2 } from 'lucide-react';
 import { Story } from '../types/story';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
 import { paymentService } from '../services/paymentService';
 import { useNavigate } from 'react-router-dom';
-import { ref, onValue, off } from 'firebase/database';
+import { ref, set, onValue, off } from 'firebase/database';
 import { database } from '../lib/firebase';
 
 interface StoryTemplateModalProps {
   story: Story;
   isOpen: boolean;
   onClose: () => void;
-}
-
-interface TransformResponse {
-  success: boolean;
-  message: string;
 }
 
 export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemplateModalProps) {
@@ -35,16 +30,7 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   const [isDragging, setIsDragging] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const transformListenerRef = useRef<() => void>();
-
-  useEffect(() => {
-    return () => {
-      // Cleanup listener on unmount
-      if (transformListenerRef.current) {
-        transformListenerRef.current();
-      }
-    };
-  }, []);
+  const transformRef = useRef<any>(null);
 
   const handleFileChange = (file: File) => {
     if (file) {
@@ -59,34 +45,33 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
   };
 
   const handleTransform = async () => {
-    if (!formData.photo || !user?.email || !formData.childName || !formData.age || !formData.gender) {
+    if (!formData.photo || !user?.email || !formData.childName || !formData.age || !formData.gender || !user.uid) {
       toast.error('Lütfen tüm bilgileri doldurun');
       return;
     }
 
     setIsTransforming(true);
     try {
-      // Email'i Firebase path için güvenli hale getir
-      const safeEmail = user.email.replace(/[.#$[\]]/g, '_');
-      
-      const formDataToSend = new FormData();
-      formDataToSend.append('photo', formData.photo);
-      formDataToSend.append('email', user.email);
-      formDataToSend.append('templateId', story.id);
-      formDataToSend.append('childName', formData.childName);
-      formDataToSend.append('childAge', formData.age);
-      formDataToSend.append('childGender', formData.gender);
-
-      // Firebase listener'ı başlat
-      const transformRef = ref(database, `transformations/${safeEmail}/${story.id}`);
-      
-      // Önceki listener'ı temizle
-      if (transformListenerRef.current) {
-        transformListenerRef.current();
+      // Önce önceki listener'ı temizle
+      if (transformRef.current) {
+        off(transformRef.current);
       }
 
-      // Yeni listener'ı ayarla
-      transformListenerRef.current = onValue(transformRef, (snapshot) => {
+      const transformId = `${story.id}_${Date.now()}`;
+      transformRef.current = ref(database, `transformations/${user.uid}/${transformId}`);
+
+      // İlk durumu kaydet
+      await set(transformRef.current, {
+        status: 'processing',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        templateId: story.id,
+        userEmail: user.email
+      });
+
+      // Listener'ı ayarla
+      onValue(transformRef.current, (snapshot) => {
+        console.log('Transform status update:', snapshot.val());
         if (snapshot.exists()) {
           const data = snapshot.val();
           if (data.status === 'completed' && data.transformedImageUrl) {
@@ -94,18 +79,30 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
             setIsTransforming(false);
             toast.success('Fotoğraf başarıyla dönüştürüldü');
             // Listener'ı temizle
-            if (transformListenerRef.current) {
-              transformListenerRef.current();
-            }
+            off(transformRef.current);
           } else if (data.status === 'failed') {
             setIsTransforming(false);
             toast.error(data.error || 'Dönüştürme işlemi başarısız oldu');
-            if (transformListenerRef.current) {
-              transformListenerRef.current();
-            }
+            // Listener'ı temizle
+            off(transformRef.current);
           }
         }
+      }, (error) => {
+        console.error('Transform listener error:', error);
+        setIsTransforming(false);
+        toast.error('Dönüştürme durumu takip edilemiyor');
       });
+
+      // Form verilerini hazırla ve gönder
+      const formDataToSend = new FormData();
+      formDataToSend.append('photo', formData.photo);
+      formDataToSend.append('email', user.email);
+      formDataToSend.append('uid', user.uid);
+      formDataToSend.append('templateId', story.id);
+      formDataToSend.append('transformId', transformId);
+      formDataToSend.append('childName', formData.childName);
+      formDataToSend.append('childAge', formData.age);
+      formDataToSend.append('childGender', formData.gender);
 
       const response = await fetch(import.meta.env.VITE_PHOTO_TRANSFORM_WEBHOOK_URL, {
         method: 'POST',
@@ -126,14 +123,24 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
 
       toast.success('Dönüştürme işlemi başlatıldı');
 
+      // 30 saniye timeout
+      setTimeout(() => {
+        if (isTransforming) {
+          setIsTransforming(false);
+          toast.error('Dönüştürme işlemi zaman aşımına uğradı');
+          if (transformRef.current) {
+            off(transformRef.current);
+          }
+        }
+      }, 30000);
+
     } catch (error) {
       console.error('Transform error:', error);
       setIsTransforming(false);
       toast.error(error instanceof Error ? error.message : 'Fotoğraf dönüştürülürken bir hata oluştu');
       
-      // Hata durumunda listener'ı temizle
-      if (transformListenerRef.current) {
-        transformListenerRef.current();
+      if (transformRef.current) {
+        off(transformRef.current);
       }
     }
   };
@@ -190,6 +197,15 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
       setIsSubmitting(false);
     }
   };
+
+  // Cleanup effect
+  React.useEffect(() => {
+    return () => {
+      if (transformRef.current) {
+        off(transformRef.current);
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
