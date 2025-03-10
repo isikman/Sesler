@@ -18,7 +18,8 @@ class PaymentService {
     childName: string,
     childAge: string,
     childGender: 'male' | 'female',
-    transformedPhotoUrl: string
+    transformedPhotoUrl: string,
+    transformId?: string // transformId parametresini ekledik
   ): Promise<PaymentResponse> {
     let storyId: string | null = null;
 
@@ -47,6 +48,7 @@ class PaymentService {
         childAge,
         childGender,
         transformedPhotoUrl,
+        transformId, // transformId'yi ekledik
         status: 'creating',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -66,7 +68,8 @@ class PaymentService {
           "childName": childName,
           "childAge": childAge,
           "childGender": childGender,
-          "transformedPhotoUrl": transformedPhotoUrl
+          "transformedPhotoUrl": transformedPhotoUrl,
+          "transformId": transformId // transformId'yi ekledik
         }
       };
 
