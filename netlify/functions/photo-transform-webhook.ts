@@ -17,9 +17,8 @@ const database = getDatabase(app);
 interface TransformWebhookPayload {
   type: string;
   data: {
-    userEmail?: string;
-    templateId?: string;
-    userId?: string;
+    userEmail: string;
+    templateId: string;
     transformedImageUrl?: string;
     error?: string;
   };
@@ -47,37 +46,27 @@ export const handler: Handler = async (event) => {
     console.log('Received webhook payload:', payload);
 
     // Gerekli alanları kontrol et
-    if (!payload.type || !payload.data) {
+    if (!payload.type || !payload.data || !payload.data.userEmail || !payload.data.templateId) {
       return {
         statusCode: 400,
         body: JSON.stringify({
           success: false,
-          message: 'Missing required fields'
+          message: 'Missing required fields: type, userEmail, or templateId'
         })
       };
     }
 
-    // userId ve templateId'yi payload'dan al
-    const { userId, templateId } = payload.data;
-
-    // userId ve templateId kontrolü
-    if (!userId || !templateId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          success: false,
-          message: 'Missing userId or templateId'
-        })
-      };
-    }
-
-    const transformRef = database.ref(`transformations/${userId}/${templateId}`);
+    // Email'i Firebase path için güvenli hale getir
+    const safeEmail = payload.data.userEmail.replace(/[.#$[\]]/g, '_');
+    const transformRef = database.ref(`transformations/${safeEmail}/${payload.data.templateId}`);
 
     switch (payload.type) {
       case 'start':
         // Dönüşüm başlangıcı
-        await transformRef.update({
+        await transformRef.set({
           status: 'processing',
+          userEmail: payload.data.userEmail,
+          createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
 
