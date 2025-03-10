@@ -17,7 +17,9 @@ const database = getDatabase(app);
 interface TransformWebhookPayload {
   type: string;
   data: {
+    uid: string;
     userEmail: string;
+    transformId: string;
     templateId: string;
     transformedImageUrl?: string;
     error?: string;
@@ -46,27 +48,24 @@ export const handler: Handler = async (event) => {
     console.log('Received webhook payload:', payload);
 
     // Gerekli alanları kontrol et
-    if (!payload.type || !payload.data || !payload.data.userEmail || !payload.data.templateId) {
+    if (!payload.type || !payload.data || !payload.data.uid || !payload.data.transformId) {
       return {
         statusCode: 400,
         body: JSON.stringify({
           success: false,
-          message: 'Missing required fields: type, userEmail, or templateId'
+          message: 'Missing required fields: type, uid, or transformId'
         })
       };
     }
 
-    // Email'i Firebase path için güvenli hale getir
-    const safeEmail = payload.data.userEmail.replace(/[.#$[\]]/g, '_');
-    const transformRef = database.ref(`transformations/${safeEmail}/${payload.data.templateId}`);
+    // Referansı doğrudan uid ve transformId ile oluştur
+    const transformRef = database.ref(`transformations/${payload.data.uid}/${payload.data.transformId}`);
 
     switch (payload.type) {
       case 'start':
-        // Dönüşüm başlangıcı
-        await transformRef.set({
+        // Sadece status'u güncelle, yeni kayıt oluşturma
+        await transformRef.update({
           status: 'processing',
-          userEmail: payload.data.userEmail,
-          createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
 
