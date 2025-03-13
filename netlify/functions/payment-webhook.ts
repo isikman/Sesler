@@ -22,7 +22,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const MAKE_WEBHOOK_TIMEOUT = 10000; // 10 seconds timeout
 
+// Make.com webhook çağrısı fonksiyonunu güncelle
 async function notifyMakeWebhook(webhookUrl: string, apiKey: string, data: any) {
+  console.log('Sending webhook to Make.com:', { webhookUrl, data });
+  
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), MAKE_WEBHOOK_TIMEOUT);
 
@@ -38,16 +41,16 @@ async function notifyMakeWebhook(webhookUrl: string, apiKey: string, data: any) 
     });
 
     if (!response.ok) {
-      throw new Error(`Webhook failed with status ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Webhook failed with status ${response.status}: ${errorText}`);
     }
+
+    const responseData = await response.json();
+    console.log('Make.com webhook response:', responseData);
 
     return true;
   } catch (error) {
-    if (error.name === 'AbortError') {
-      console.error('Make.com webhook timeout');
-    } else {
-      console.error('Make.com webhook error:', error);
-    }
+    console.error('Make.com webhook error:', error);
     return false;
   } finally {
     clearTimeout(timeoutId);
@@ -106,8 +109,6 @@ export const handler: Handler = async (event) => {
             currency: session.currency,
             paymentIntent: session.payment_intent,
             customerEmail: session.customer_email,
-            customerPhone: session.customer_details?.phone,
-            billingAddress: session.customer_details?.address,
             paidAt: new Date().toISOString()
           },
           updatedAt: new Date().toISOString()
