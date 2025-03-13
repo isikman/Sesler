@@ -21,26 +21,25 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check for successful payment
-    const searchParams = new URLSearchParams(location.search);
-    const paymentSuccess = searchParams.get('payment_success');
-    const storyId = searchParams.get('story_id');
+    const handlePaymentSuccess = () => {
+      const searchParams = new URLSearchParams(location.search);
+      const paymentSuccess = searchParams.get('payment_success');
+      const storyId = searchParams.get('story_id');
 
-    if (paymentSuccess === 'true' && storyId) {
-      toast.success('Ödeme başarılı! Masalınız hazırlanıyor... Masallarım sayfasından takip edebilirsiniz.');
-      
-      // Clear URL parameters
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('payment_success');
-      newUrl.searchParams.delete('story_id');
-      window.history.replaceState({}, '', newUrl.pathname);
+      if (paymentSuccess === 'true' && storyId) {
+        // Show success message
+        toast.success('Ödeme başarılı! Masalınız hazırlanıyor... Masallarım sayfasından takip edebilirsiniz.', {
+          duration: 5000,
+        });
 
-      // Navigate to my-stories after a short delay
-      setTimeout(() => {
-        navigate('/my-stories');
-      }, 2000);
-    }
-  }, [location, navigate]);
+        // Clear URL parameters and navigate
+        window.history.replaceState({}, '', '/my-stories');
+        navigate('/my-stories', { replace: true });
+      }
+    };
+
+    handlePaymentSuccess();
+  }, [location.search, navigate]);
 
   useEffect(() => {
     const initializeDashboard = async () => {

@@ -20,14 +20,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
 
-const MAKE_WEBHOOK_TIMEOUT = 10000; // 10 seconds timeout
-
-// Make.com webhook çağrısı fonksiyonunu güncelle
+// Make.com webhook çağrısı fonksiyonu
 async function notifyMakeWebhook(webhookUrl: string, apiKey: string, data: any) {
   console.log('Sending webhook to Make.com:', { webhookUrl, data });
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), MAKE_WEBHOOK_TIMEOUT);
 
   try {
     const response = await fetch(webhookUrl, {
@@ -37,23 +32,19 @@ async function notifyMakeWebhook(webhookUrl: string, apiKey: string, data: any) 
         'X-API-Key': apiKey
       },
       body: JSON.stringify(data),
-      signal: controller.signal
+      timeout: 10000 // 10 second timeout
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Webhook failed with status ${response.status}: ${errorText}`);
+      throw new Error(`Webhook failed with status ${response.status}`);
     }
 
     const responseData = await response.json();
     console.log('Make.com webhook response:', responseData);
-
     return true;
   } catch (error) {
     console.error('Make.com webhook error:', error);
     return false;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -133,9 +124,7 @@ export const handler: Handler = async (event) => {
           const webhookSuccess = await notifyMakeWebhook(webhookUrl, apiKey, webhookData);
           
           if (!webhookSuccess) {
-            console.error('Failed to notify Make.com webhook after retries');
-            // Continue processing - we don't want to fail the whole webhook
-            // The story creation can be retried later
+            console.error('Failed to notify Make.com webhook');
           } else {
             console.log('Make.com webhook notified successfully');
           }

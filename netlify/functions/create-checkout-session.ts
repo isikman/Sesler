@@ -27,7 +27,7 @@ export const handler: Handler = async (event) => {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      success_url: `${process.env.URL}/dashboard?payment_success=true&story_id=${storyId}`,
+      success_url: `${process.env.URL}/my-stories?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.URL}/dashboard`,
       customer_email: userEmail,
       line_items: [
