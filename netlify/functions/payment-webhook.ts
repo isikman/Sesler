@@ -1,8 +1,9 @@
 import { Handler } from '@netlify/functions';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getDatabase } from 'firebase-admin/database';
+import Stripe from 'stripe';
 
-// Firebase Admin yapılandırması
+// Initialize Firebase Admin
 const app = initializeApp({
   credential: cert({
     projectId: process.env.VITE_FIREBASE_PROJECT_ID,
@@ -14,46 +15,13 @@ const app = initializeApp({
 
 const database = getDatabase(app);
 
-interface IyzicoWebhookPayload {
-  status: 'success' | 'failure';
-  paymentId: string;
-  conversationId: string; // Bu bizim story ID'miz olacak
-  userId: string;
-  price: number;
-  paidPrice: number;
-  currency: string;
-  paymentStatus: string;
-  fraudStatus: number;
-  merchantCommissionRate: number;
-  merchantCommissionRateAmount: number;
-  iyziCommissionRateAmount: number;
-  iyziCommissionFee: number;
-  cardType: string;
-  cardAssociation: string;
-  cardFamily: string;
-  binNumber: string;
-  lastFourDigits: string;
-  basketId: string;
-  itemTransactions: Array<{
-    itemId: string;
-    paymentTransactionId: string;
-    transactionStatus: number;
-    price: number;
-    paidPrice: number;
-    merchantCommissionRate: number;
-    merchantCommissionRateAmount: number;
-    iyziCommissionRateAmount: number;
-    iyziCommissionFee: number;
-    blockageRate: number;
-    blockageRateAmountMerchant: number;
-    blockageRateAmountSubMerchant: number;
-    blockageResolvedDate: string;
-    subMerchantPrice: number;
-    subMerchantPayoutRate: number;
-    subMerchantPayoutAmount: number;
-    merchantPayoutAmount: number;
-  }>;
-}
+// Initialize Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16',
+});
+
+const STORY_WEBHOOK_URL = process.env.VITE_STORY_WEBHOOK_URL;
+const MAKE_WEBHOOK_API_KEY = process.env.VITE_MAKE_WEBHOOK_API_KEY;
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -63,59 +31,95 @@ export const handler: Handler = async (event) => {
     };
   }
 
-  try {
-    const payload = JSON.parse(event.body || '{}') as IyzicoWebhookPayload;
-    console.log('Received Iyzico webhook:', payload);
-
-    if (payload.status === 'success') {
-      // Ödeme başarılı - hikaye durumunu güncelle
-      const storyRef = database.ref(`userStories/${payload.userId}/${payload.conversationId}`);
-      
-      await storyRef.update({
-        paymentStatus: 'completed',
-        paymentDetails: {
-          paymentId: payload.paymentId,
-          amount: payload.paidPrice,
-          currency: payload.currency,
-          cardType: payload.cardType,
-          lastFourDigits: payload.lastFourDigits,
-          paidAt: new Date().toISOString()
-        },
-        updatedAt: new Date().toISOString()
-      });
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          success: true,
-          message: 'Payment processed successfully'
-        })
-      };
-    } else {
-      // Ödeme başarısız - hikaye durumunu güncelle
-      const storyRef = database.ref(`userStories/${payload.userId}/${payload.conversationId}`);
-      
-      await storyRef.update({
-        paymentStatus: 'failed',
-        paymentError: payload.paymentStatus,
-        updatedAt: new Date().toISOString()
-      });
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          success: false,
-          message: 'Payment failed',
-          error: payload.paymentStatus
-        })
-      };
-    }
-  } catch (error) {
-    console.error('Payment webhook error:', error);
+  const stripeSignature = event.headers['stripe-signature'];
+  
+  if (!stripeSignature) {
     return {
-      statusCode: 500,
+      statusCode: 400,
+      body: JSON.stringify({ message: 'Missing stripe signature' })
+    };
+  }
+
+  try {
+    // Verify and construct the event
+    const event = stripe.webhooks.constructEvent(
+      event.body!,
+      stripeSignature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+
+    // Handle the event
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        
+        // Get metadata from the session
+        const { storyId, userId, templateId } = session.metadata || {};
+        
+        if (!storyId || !userId) {
+          throw new Error('Missing required metadata');
+        }
+
+        // Update story payment status in Firebase
+        const storyRef = database.ref(`userStories/${userId}/${storyId}`);
+        await storyRef.update({
+          paymentStatus: 'completed',
+          paymentDetails: {
+            sessionId: session.id,
+            amount: session.amount_total,
+            currency: session.currency,
+            paymentIntent: session.payment_intent,
+            customerEmail: session.customer_email,
+            paidAt: new Date().toISOString()
+          },
+          updatedAt: new Date().toISOString()
+        });
+
+        // Notify Make.com to start story creation
+        if (STORY_WEBHOOK_URL) {
+          await fetch(STORY_WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': MAKE_WEBHOOK_API_KEY!
+            },
+            body: JSON.stringify({
+              action: 'create_story',
+              data: {
+                storyId,
+                userId,
+                templateId
+              }
+            })
+          });
+        }
+
+        break;
+      }
+
+      case 'checkout.session.expired': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const { storyId, userId } = session.metadata || {};
+        
+        if (storyId && userId) {
+          // Delete the story record since payment expired
+          const storyRef = database.ref(`userStories/${userId}/${storyId}`);
+          await storyRef.remove();
+        }
+        
+        break;
+      }
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ received: true })
+    };
+  } catch (error) {
+    console.error('Stripe webhook error:', error);
+    return {
+      statusCode: 400,
       body: JSON.stringify({
-        success: false,
         message: error instanceof Error ? error.message : 'Unknown error'
       })
     };

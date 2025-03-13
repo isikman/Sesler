@@ -9,8 +9,7 @@ interface PaymentResponse {
 }
 
 class PaymentService {
-  private readonly PAYMENT_WEBHOOK_URL = import.meta.env.VITE_PAYMENT_WEBHOOK_URL;
-  private readonly API_KEY = import.meta.env.VITE_MAKE_WEBHOOK_API_KEY;
+  private readonly STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
   async initiatePayment(
     user: User,
@@ -19,12 +18,12 @@ class PaymentService {
     childAge: string,
     childGender: 'male' | 'female',
     transformedPhotoUrl: string,
-    transformId?: string // transformId parametresini ekledik
+    transformId?: string
   ): Promise<PaymentResponse> {
     let storyId: string | null = null;
 
     try {
-      // Gerekli parametreleri kontrol et
+      // Validate required parameters
       if (!user || !user.uid || !user.email) {
         throw new Error('User information is missing');
       }
@@ -33,10 +32,14 @@ class PaymentService {
         throw new Error('Required story information is missing');
       }
 
-      // Template ID'yi kullanarak story ID oluştur
+      if (!this.STRIPE_PUBLISHABLE_KEY) {
+        throw new Error('Stripe configuration is missing');
+      }
+
+      // Create story ID using template ID
       storyId = `${templateId}_${user.uid}_${Date.now()}`;
 
-      // Firebase'e creating statüsünde kayıt oluştur
+      // Create initial record in Firebase with pending payment status
       const storyRef = ref(database, `userStories/${user.uid}/${storyId}`);
       
       const storyData = {
@@ -48,68 +51,49 @@ class PaymentService {
         childAge,
         childGender,
         transformedPhotoUrl,
-        transformId, // transformId'yi ekledik
+        transformId,
         status: 'creating',
+        paymentStatus: 'pending',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
-      // Firebase'e kaydet
+      // Save to Firebase
       await set(storyRef, storyData);
 
-      // Make.com'a hikaye oluşturma isteği gönder
-      const webhookData = {
-        "action": "create_story",
-        "data": {
-          "storyId": storyId,
-          "userId": user.uid,
-          "userEmail": user.email,
-          "templateId": templateId,
-          "childName": childName,
-          "childAge": childAge,
-          "childGender": childGender,
-          "transformedPhotoUrl": transformedPhotoUrl,
-          "transformId": transformId // transformId'yi ekledik
-        }
-      };
-
-      console.log('Sending webhook request to:', this.PAYMENT_WEBHOOK_URL);
-      console.log('Webhook data:', JSON.stringify(webhookData, null, 2));
-
-      const makeResponse = await fetch(this.PAYMENT_WEBHOOK_URL, {
+      // Create Stripe checkout session
+      const response = await fetch('/.netlify/functions/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': this.API_KEY
         },
-        body: JSON.stringify(webhookData)
+        body: JSON.stringify({
+          storyId,
+          userId: user.uid,
+          userEmail: user.email,
+          templateId
+        })
       });
 
-      if (!makeResponse.ok) {
-        const errorText = await makeResponse.text();
-        console.error('Webhook response error:', {
-          status: makeResponse.status,
-          statusText: makeResponse.statusText,
-          body: errorText
-        });
-        throw new Error(`Story creation request failed: ${makeResponse.status} ${makeResponse.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create checkout session: ${response.status} ${response.statusText}`);
       }
 
-      const responseData = await makeResponse.json();
-      console.log('Webhook response:', responseData);
+      const responseData = await response.json();
 
-      if (!responseData.success) {
-        throw new Error(responseData.message || 'Story creation failed');
+      if (!responseData.success || !responseData.checkoutUrl) {
+        throw new Error(responseData.message || 'Failed to create checkout session');
       }
 
       return {
         success: true,
-        paymentUrl: '/my-stories' // Test için direkt masallarım sayfasına yönlendir
+        paymentUrl: responseData.checkoutUrl
       };
     } catch (error) {
       console.error('Payment initiation error:', error);
       
-      // Hata durumunda Firebase'deki kaydı sil
+      // Clean up Firebase record on error
       if (user?.uid && storyId) {
         try {
           const storyRef = ref(database, `userStories/${user.uid}/${storyId}`);
