@@ -1,117 +1,141 @@
-import { User } from 'firebase/auth';
-import { ref, set } from 'firebase/database';
-import { database } from '../lib/firebase';
+import { Handler } from '@netlify/functions';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getDatabase } from 'firebase-admin/database';
+import Stripe from 'stripe';
 
-interface PaymentResponse {
-  success: boolean;
-  paymentUrl?: string;
-  error?: string;
-}
+// Initialize Firebase Admin
+const app = initializeApp({
+  credential: cert({
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+  }),
+  databaseURL: process.env.VITE_FIREBASE_DATABASE_URL
+});
 
-class PaymentService {
-  private readonly STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+const database = getDatabase(app);
 
-  async initiatePayment(
-    user: User,
-    templateId: string,
-    childName: string,
-    childAge: string,
-    childGender: 'male' | 'female',
-    transformedPhotoUrl: string,
-    transformId?: string
-  ): Promise<PaymentResponse> {
-    let storyId: string | null = null;
+// Initialize Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16',
+});
 
-    try {
-      // Validate required parameters
-      if (!user || !user.uid || !user.email) {
-        throw new Error('User information is missing');
-      }
-
-      if (!templateId || !childName || !childAge || !childGender || !transformedPhotoUrl) {
-        throw new Error('Required story information is missing');
-      }
-
-      if (!this.STRIPE_PUBLISHABLE_KEY) {
-        throw new Error('Stripe configuration is missing');
-      }
-
-      // Create story ID using template ID
-      storyId = `${templateId}_${user.uid}_${Date.now()}`;
-
-      // Create initial record in Firebase with pending payment status
-      const storyRef = ref(database, `userStories/${user.uid}/${storyId}`);
-      
-      const storyData = {
-        id: storyId,
-        userId: user.uid,
-        userEmail: user.email,
-        templateId,
-        childName,
-        childAge,
-        childGender,
-        transformedPhotoUrl,
-        transformId,
-        status: 'creating',
-        paymentStatus: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      // Save to Firebase
-      await set(storyRef, storyData);
-
-      // Create Stripe checkout session
-      const response = await fetch('/.netlify/functions/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          storyId,
-          userId: user.uid,
-          userEmail: user.email,
-          templateId
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to create checkout session: ${response.status} ${response.statusText}`);
-      }
-
-      const responseData = await response.json();
-
-      if (!responseData.success || !responseData.checkoutUrl) {
-        throw new Error(responseData.message || 'Failed to create checkout session');
-      }
-
-      // Redirect to Stripe Checkout
-      window.location.href = responseData.checkoutUrl;
-
-      return {
-        success: true,
-        paymentUrl: responseData.checkoutUrl
-      };
-    } catch (error) {
-      console.error('Payment initiation error:', error);
-      
-      // Clean up Firebase record on error
-      if (user?.uid && storyId) {
-        try {
-          const storyRef = ref(database, `userStories/${user.uid}/${storyId}`);
-          await set(storyRef, null);
-        } catch (deleteError) {
-          console.error('Error cleaning up failed story:', deleteError);
-        }
-      }
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
+export const handler: Handler = async (event) => {
+  if (event.httpMethod !== 'POST') {
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ message: 'Method not allowed' })
+    };
   }
-}
 
-export const paymentService = new PaymentService();
+  const stripeSignature = event.headers['stripe-signature'];
+  
+  if (!stripeSignature) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: 'Missing stripe signature' })
+    };
+  }
+
+  try {
+    // Verify and construct the event
+    const stripeEvent = stripe.webhooks.constructEvent(
+      event.body!,
+      stripeSignature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+
+    console.log('Received stripe event:', stripeEvent.type);
+
+    // Handle the event
+    switch (stripeEvent.type) {
+      case 'checkout.session.completed': {
+        const session = stripeEvent.data.object as Stripe.Checkout.Session;
+        console.log('Processing completed session:', session.id);
+        
+        // Get metadata from the session
+        const { storyId, userId, templateId, webhookUrl, apiKey } = session.metadata || {};
+        
+        if (!storyId || !userId) {
+          throw new Error('Missing required metadata');
+        }
+
+        console.log('Updating Firebase status for story:', storyId);
+
+        // Update story payment status in Firebase
+        const storyRef = database.ref(`userStories/${userId}/${storyId}`);
+        await storyRef.update({
+          paymentStatus: 'completed',
+          paymentDetails: {
+            sessionId: session.id,
+            amount: session.amount_total,
+            currency: session.currency,
+            paymentIntent: session.payment_intent,
+            customerEmail: session.customer_email,
+            paidAt: new Date().toISOString()
+          },
+          updatedAt: new Date().toISOString()
+        });
+
+        console.log('Firebase update completed');
+
+        // Notify Make.com to start story creation
+        if (webhookUrl && apiKey) {
+          console.log('Notifying Make.com webhook');
+          const response = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-API-Key': apiKey
+            },
+            body: JSON.stringify({
+              action: 'create_story',
+              data: {
+                storyId,
+                userId,
+                templateId
+              }
+            })
+          });
+
+          if (!response.ok) {
+            console.error('Make.com webhook failed:', await response.text());
+            throw new Error('Failed to notify Make.com webhook');
+          }
+
+          console.log('Make.com webhook notified successfully');
+        } else {
+          console.warn('Missing webhook URL or API key in session metadata');
+        }
+
+        break;
+      }
+
+      case 'checkout.session.expired': {
+        const session = stripeEvent.data.object as Stripe.Checkout.Session;
+        const { storyId, userId } = session.metadata || {};
+        
+        if (storyId && userId) {
+          console.log('Deleting expired story record:', storyId);
+          const storyRef = database.ref(`userStories/${userId}/${storyId}`);
+          await storyRef.remove();
+        }
+        
+        break;
+      }
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ received: true })
+    };
+  } catch (error) {
+    console.error('Stripe webhook error:', error);
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        message: error instanceof Error ? error.message : 'Unknown error'
+      })
+    };
+  }
+};

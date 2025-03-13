@@ -5,6 +5,7 @@ import { UserStory } from '../types/story';
 import { Book, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import StoryReader from '../components/StoryReader';
 import toast from 'react-hot-toast';
+import { useLocation } from 'react-router-dom';
 
 export default function MyStories() {
   const { user } = useAuth();
@@ -12,6 +13,16 @@ export default function MyStories() {
   const [selectedStory, setSelectedStory] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    // Check for successful payment
+    const searchParams = new URLSearchParams(location.search);
+    const sessionId = searchParams.get('session_id');
+    if (sessionId) {
+      toast.success('Ödeme başarılı! Masalınız hazırlanıyor...');
+    }
+  }, [location]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -25,7 +36,7 @@ export default function MyStories() {
       try {
         console.log('Initializing stories for user:', user.uid);
         
-        // Realtime updates için subscribe ol
+        // Subscribe to realtime updates
         unsubscribe = userStoryService.subscribeToUserStories(user.uid, (updatedStories) => {
           console.log('Stories updated:', updatedStories);
           setStories(updatedStories);
