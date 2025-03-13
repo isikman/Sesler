@@ -20,7 +20,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
 
-const STORY_WEBHOOK_URL = process.env.VITE_STORY_WEBHOOK_URL;
+const STORY_WEBHOOK_URL = process.env.VITE_PAYMENT_WEBHOOK_URL;
 const MAKE_WEBHOOK_API_KEY = process.env.VITE_MAKE_WEBHOOK_API_KEY;
 
 export const handler: Handler = async (event) => {
@@ -42,16 +42,16 @@ export const handler: Handler = async (event) => {
 
   try {
     // Verify and construct the event
-    const event = stripe.webhooks.constructEvent(
+    const stripeEvent = stripe.webhooks.constructEvent(
       event.body!,
       stripeSignature,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
 
     // Handle the event
-    switch (event.type) {
+    switch (stripeEvent.type) {
       case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
+        const session = stripeEvent.data.object as Stripe.Checkout.Session;
         
         // Get metadata from the session
         const { storyId, userId, templateId } = session.metadata || {};
@@ -98,7 +98,7 @@ export const handler: Handler = async (event) => {
       }
 
       case 'checkout.session.expired': {
-        const session = event.data.object as Stripe.Checkout.Session;
+        const session = stripeEvent.data.object as Stripe.Checkout.Session;
         const { storyId, userId } = session.metadata || {};
         
         if (storyId && userId) {

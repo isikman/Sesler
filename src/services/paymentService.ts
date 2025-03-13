@@ -86,6 +86,9 @@ class PaymentService {
         throw new Error(responseData.message || 'Failed to create checkout session');
       }
 
+      // Redirect to Stripe Checkout
+      window.location.href = responseData.checkoutUrl;
+
       return {
         success: true,
         paymentUrl: responseData.checkoutUrl
