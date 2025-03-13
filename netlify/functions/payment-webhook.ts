@@ -20,8 +20,39 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
 });
 
-const STORY_WEBHOOK_URL = process.env.VITE_PAYMENT_WEBHOOK_URL;
-const MAKE_WEBHOOK_API_KEY = process.env.VITE_MAKE_WEBHOOK_API_KEY;
+const MAKE_WEBHOOK_TIMEOUT = 10000; // 10 seconds timeout
+
+async function notifyMakeWebhook(webhookUrl: string, apiKey: string, data: any) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MAKE_WEBHOOK_TIMEOUT);
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey
+      },
+      body: JSON.stringify(data),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Webhook failed with status ${response.status}`);
+    }
+
+    return true;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error('Make.com webhook timeout');
+    } else {
+      console.error('Make.com webhook error:', error);
+    }
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -48,17 +79,22 @@ export const handler: Handler = async (event) => {
       process.env.STRIPE_WEBHOOK_SECRET!
     );
 
+    console.log('Received stripe event:', stripeEvent.type);
+
     // Handle the event
     switch (stripeEvent.type) {
       case 'checkout.session.completed': {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
+        console.log('Processing completed session:', session.id);
         
         // Get metadata from the session
-        const { storyId, userId, templateId } = session.metadata || {};
+        const { storyId, userId, templateId, webhookUrl, apiKey } = session.metadata || {};
         
         if (!storyId || !userId) {
           throw new Error('Missing required metadata');
         }
+
+        console.log('Updating Firebase status for story:', storyId);
 
         // Update story payment status in Firebase
         const storyRef = database.ref(`userStories/${userId}/${storyId}`);
@@ -70,28 +106,40 @@ export const handler: Handler = async (event) => {
             currency: session.currency,
             paymentIntent: session.payment_intent,
             customerEmail: session.customer_email,
+            customerPhone: session.customer_details?.phone,
+            billingAddress: session.customer_details?.address,
             paidAt: new Date().toISOString()
           },
           updatedAt: new Date().toISOString()
         });
 
+        console.log('Firebase update completed');
+
         // Notify Make.com to start story creation
-        if (STORY_WEBHOOK_URL) {
-          await fetch(STORY_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-API-Key': MAKE_WEBHOOK_API_KEY!
-            },
-            body: JSON.stringify({
-              action: 'create_story',
-              data: {
-                storyId,
-                userId,
-                templateId
-              }
-            })
-          });
+        if (webhookUrl && apiKey) {
+          console.log('Notifying Make.com webhook');
+          
+          const webhookData = {
+            action: 'create_story',
+            data: {
+              storyId,
+              userId,
+              templateId,
+              sessionId: session.id
+            }
+          };
+
+          const webhookSuccess = await notifyMakeWebhook(webhookUrl, apiKey, webhookData);
+          
+          if (!webhookSuccess) {
+            console.error('Failed to notify Make.com webhook after retries');
+            // Continue processing - we don't want to fail the whole webhook
+            // The story creation can be retried later
+          } else {
+            console.log('Make.com webhook notified successfully');
+          }
+        } else {
+          console.warn('Missing webhook URL or API key in session metadata');
         }
 
         break;
@@ -102,7 +150,7 @@ export const handler: Handler = async (event) => {
         const { storyId, userId } = session.metadata || {};
         
         if (storyId && userId) {
-          // Delete the story record since payment expired
+          console.log('Deleting expired story record:', storyId);
           const storyRef = database.ref(`userStories/${userId}/${storyId}`);
           await storyRef.remove();
         }
