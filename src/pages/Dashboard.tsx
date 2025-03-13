@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, Wand2, Crown, Star, Sparkles, ArrowRight, BookOpen } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import StoryReader from '../components/StoryReader';
 import StoryTemplateModal from '../components/StoryTemplateModal';
 import StoryLoadingModal from '../components/StoryLoadingModal';
@@ -16,6 +17,30 @@ export default function Dashboard() {
   const [loadingStoryId, setLoadingStoryId] = useState('');
   const [stories, setStories] = useState<Story[]>([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check for successful payment
+    const searchParams = new URLSearchParams(location.search);
+    const paymentSuccess = searchParams.get('payment_success');
+    const storyId = searchParams.get('story_id');
+
+    if (paymentSuccess === 'true' && storyId) {
+      toast.success('Ödeme başarılı! Masalınız hazırlanıyor... Masallarım sayfasından takip edebilirsiniz.');
+      
+      // Clear URL parameters
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('payment_success');
+      newUrl.searchParams.delete('story_id');
+      window.history.replaceState({}, '', newUrl.pathname);
+
+      // Navigate to my-stories after a short delay
+      setTimeout(() => {
+        navigate('/my-stories');
+      }, 2000);
+    }
+  }, [location, navigate]);
 
   useEffect(() => {
     const initializeDashboard = async () => {
