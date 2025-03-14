@@ -163,45 +163,43 @@ export default function StoryTemplateModal({ story, isOpen, onClose }: StoryTemp
     }
   };
 
-const handleSubmit = async () => {
-  if (!user || !formData.photo || !transformedUrl) {
-    toast.error('Lütfen tüm bilgileri doldurun');
-    return;
-  }
-
-  setIsSubmitting(true);
-  try {
-    // transformRef.current'dan transformId'yi al
-    const transformId = transformRef.current?.key?.split('/').pop();
-    
-    const response = await paymentService.initiatePayment(
-      user,
-      story.id,
-      formData.childName,
-      formData.age,
-      formData.gender,
-      transformedUrl,
-      transformId // transformId'yi ekledik
-    );
-
-    if (!response.success) {
-      throw new Error(response.error || 'Hikaye oluşturma başlatılamadı');
+  const handleSubmit = async () => {
+    if (!user || !formData.photo || !transformedUrl) {
+      toast.error('Lütfen tüm bilgileri doldurun');
+      return;
     }
 
-    toast.success('Hikayeniz oluşturulmaya başlandı! Masallarım sayfasından takip edebilirsiniz.');
-    onClose();
-    
-    setTimeout(() => {
-      navigate('/my-stories');
-    }, 1500);
-  } catch (error) {
-    console.error('Story creation error:', error);
-    toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+    setIsSubmitting(true);
+    try {
+      const transformId = transformRef.current?.key?.split('/').pop();
+      
+      const response = await paymentService.initiatePayment(
+        user,
+        story.id,
+        formData.childName,
+        formData.age,
+        formData.gender,
+        transformedUrl,
+        transformId
+      );
 
+      if (!response.success) {
+        throw new Error(response.error || 'Hikaye oluşturma başlatılamadı');
+      }
+
+      // Close the modal immediately
+      onClose();
+
+      // No success toast here - it will be shown after successful payment
+      // Stripe Checkout will be opened automatically by the payment service
+      
+    } catch (error) {
+      console.error('Story creation error:', error);
+      toast.error(error instanceof Error ? error.message : 'Bir hata oluştu');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Cleanup effect
   React.useEffect(() => {

@@ -61,7 +61,7 @@ class PaymentService {
       // Save to Firebase
       await set(storyRef, storyData);
 
-      // Create Stripe checkout session
+      // Create Stripe checkout session with all necessary data
       const response = await fetch('/.netlify/functions/create-checkout-session', {
         method: 'POST',
         headers: {
@@ -71,7 +71,12 @@ class PaymentService {
           storyId,
           userId: user.uid,
           userEmail: user.email,
-          templateId
+          templateId,
+          childName,
+          childAge,
+          childGender,
+          transformedPhotoUrl,
+          transformId
         })
       });
 
