@@ -80,7 +80,7 @@ export const handler: Handler = async (event) => {
       case 'checkout.session.completed': {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
         console.log('Processing completed session:', session.id);
-
+        
         // Get payment intent to access metadata
         const paymentIntent = await stripe.paymentIntents.retrieve(session.payment_intent as string);
         
