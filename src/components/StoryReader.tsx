@@ -405,7 +405,7 @@ export default function StoryReader({ story, onClose, onUseTemplate }: StoryRead
       
       setIsFlipping(true);
       if (bookRef.current) {
-        bookRef.current.pageFlip().flip(3);
+        bookRef.current.pageFlip().flip(0);
         setTimeout(() => {
           setIsFlipping(false);
         }, 1000);
