@@ -5,7 +5,7 @@ import { UserStory } from '../types/story';
 import { Book, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import StoryReader from '../components/StoryReader';
 import toast from 'react-hot-toast';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function MyStories() {
   const { user } = useAuth();
@@ -14,19 +14,24 @@ export default function MyStories() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
+    // Check for successful payment
     const searchParams = new URLSearchParams(location.search);
     const sessionId = searchParams.get('session_id');
     
     if (sessionId) {
+      // Show success message
       toast.success('Ödeme başarılı! Masalınız hazırlanıyor...', {
-        duration: 5000
+        duration: 5000,
+        position: 'top-center'
       });
-      // Clear URL parameters
-      window.history.replaceState({}, '', '/my-stories');
+
+      // Clear URL parameters and replace history
+      navigate('/my-stories', { replace: true });
     }
-  }, [location]);
+  }, [location, navigate]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
