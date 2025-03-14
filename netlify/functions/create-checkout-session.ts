@@ -14,7 +14,17 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const { storyId, userId, userEmail, templateId } = JSON.parse(event.body || '{}');
+    const { 
+      storyId, 
+      userId, 
+      userEmail, 
+      templateId,
+      childName,
+      childAge,
+      childGender,
+      transformedPhotoUrl,
+      transformId 
+    } = JSON.parse(event.body || '{}');
 
     if (!storyId || !userId || !userEmail || !templateId) {
       return {
@@ -40,19 +50,29 @@ export const handler: Handler = async (event) => {
         storyId,
         userId,
         templateId,
+        childName,
+        childAge,
+        childGender,
+        transformedPhotoUrl,
+        transformId,
         webhookUrl: process.env.VITE_PAYMENT_WEBHOOK_URL!,
         apiKey: process.env.VITE_MAKE_WEBHOOK_API_KEY!
       },
-      allow_promotion_codes: true,
       payment_intent_data: {
         metadata: {
           storyId,
           userId,
           templateId,
+          childName,
+          childAge,
+          childGender,
+          transformedPhotoUrl,
+          transformId,
           webhookUrl: process.env.VITE_PAYMENT_WEBHOOK_URL!,
           apiKey: process.env.VITE_MAKE_WEBHOOK_API_KEY!
         }
-      }
+      },
+      allow_promotion_codes: true
     });
 
     return {
