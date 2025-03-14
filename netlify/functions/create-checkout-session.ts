@@ -1,3 +1,4 @@
+// create-checkout-session.ts dosyasının tamamı
 import { Handler } from '@netlify/functions';
 import Stripe from 'stripe';
 
@@ -27,7 +28,7 @@ export const handler: Handler = async (event) => {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      success_url: `${process.env.URL}/my-stories?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${process.env.URL}/my-stories?payment_success=true&story_id=${storyId}`,
       cancel_url: `${process.env.URL}/dashboard`,
       customer_email: userEmail,
       line_items: [
