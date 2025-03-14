@@ -80,9 +80,12 @@ export const handler: Handler = async (event) => {
       case 'checkout.session.completed': {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
         console.log('Processing completed session:', session.id);
+
+        // Get payment intent to access metadata
+        const paymentIntent = await stripe.paymentIntents.retrieve(session.payment_intent as string);
         
-        // Get metadata from the session
-        const { storyId, userId, templateId, webhookUrl, apiKey } = session.metadata || {};
+        // Get metadata from the payment intent
+        const { storyId, userId, templateId, webhookUrl, apiKey } = paymentIntent.metadata || {};
         
         if (!storyId || !userId) {
           throw new Error('Missing required metadata');
@@ -129,7 +132,7 @@ export const handler: Handler = async (event) => {
             console.log('Make.com webhook notified successfully');
           }
         } else {
-          console.warn('Missing webhook URL or API key in session metadata');
+          console.warn('Missing webhook URL or API key in payment intent metadata');
         }
 
         break;
@@ -137,7 +140,10 @@ export const handler: Handler = async (event) => {
 
       case 'checkout.session.expired': {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
-        const { storyId, userId } = session.metadata || {};
+        
+        // Get payment intent to access metadata
+        const paymentIntent = await stripe.paymentIntents.retrieve(session.payment_intent as string);
+        const { storyId, userId } = paymentIntent.metadata || {};
         
         if (storyId && userId) {
           console.log('Deleting expired story record:', storyId);
