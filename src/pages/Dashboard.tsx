@@ -23,10 +23,9 @@ export default function Dashboard() {
   useEffect(() => {
     const handlePaymentSuccess = () => {
       const searchParams = new URLSearchParams(location.search);
-      const paymentSuccess = searchParams.get('payment_success');
-      const storyId = searchParams.get('story_id');
+      const sessionId = searchParams.get('session_id');
 
-      if (paymentSuccess === 'true' && storyId) {
+      if (sessionId) {
         // Show success message
         toast.success('Ödeme başarılı! Masalınız hazırlanıyor... Masallarım sayfasından takip edebilirsiniz.', {
           duration: 5000,
