@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 
 interface AuthContextType {
   user: User | null;
+  loading: boolean;
   signIn: (email: string, password: string, rememberMe: boolean) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -30,11 +31,13 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
+      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -126,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, signIn, signUp, signInWithGoogle, signOut, resetPassword }}
+      value={{ user, loading, signIn, signUp, signInWithGoogle, signOut, resetPassword }}
     >
       {children}
     </AuthContext.Provider>

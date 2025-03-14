@@ -9,11 +9,18 @@ import DashboardLayout from './components/DashboardLayout';
 import LoginSuccess from './components/LoginSuccess';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   if (!user) {
-    // Kullanıcı giriş yapmamışsa, giriş sayfasına yönlendir ve hedef sayfayı state'de sakla
     return <Navigate to="/" state={{ from: location }} replace />;
   }
 
@@ -21,10 +28,17 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
 
-  // Eğer kullanıcı giriş yapmışsa ve state'de hedef sayfa varsa oraya yönlendir
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   if (user) {
     const targetPath = location.state?.from?.pathname || '/dashboard';
     return <Navigate to={targetPath} replace />;
