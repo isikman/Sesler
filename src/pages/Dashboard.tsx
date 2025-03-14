@@ -21,26 +21,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const handlePaymentSuccess = () => {
-      const searchParams = new URLSearchParams(location.search);
-      const sessionId = searchParams.get('session_id');
-
-      if (sessionId) {
-        // Show success message
-        toast.success('Ödeme başarılı! Masalınız hazırlanıyor... Masallarım sayfasından takip edebilirsiniz.', {
-          duration: 5000,
-        });
-
-        // Clear URL parameters and navigate
-        window.history.replaceState({}, '', '/my-stories');
-        navigate('/my-stories', { replace: true });
-      }
-    };
-
-    handlePaymentSuccess();
-  }, [location.search, navigate]);
-
-  useEffect(() => {
     const initializeDashboard = async () => {
       try {
         validateFirebaseConfig();

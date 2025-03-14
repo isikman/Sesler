@@ -16,13 +16,15 @@ export default function MyStories() {
   const location = useLocation();
 
   useEffect(() => {
-    // Check for successful payment
     const searchParams = new URLSearchParams(location.search);
     const sessionId = searchParams.get('session_id');
+    
     if (sessionId) {
       toast.success('Ödeme başarılı! Masalınız hazırlanıyor...', {
         duration: 5000
       });
+      // Clear URL parameters
+      window.history.replaceState({}, '', '/my-stories');
     }
   }, [location]);
 
