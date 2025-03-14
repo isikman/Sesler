@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import LandingPage from './pages/LandingPage';
@@ -10,12 +10,27 @@ import LoginSuccess from './components/LoginSuccess';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  return user ? <>{children}</> : <Navigate to="/" />;
+  const location = useLocation();
+
+  if (!user) {
+    // Kullanıcı giriş yapmamışsa, giriş sayfasına yönlendir ve hedef sayfayı state'de sakla
+    return <Navigate to="/" state={{ from: location }} replace />;
+  }
+
+  return <>{children}</>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  return !user ? <>{children}</> : <Navigate to="/dashboard" />;
+  const location = useLocation();
+
+  // Eğer kullanıcı giriş yapmışsa ve state'de hedef sayfa varsa oraya yönlendir
+  if (user) {
+    const targetPath = location.state?.from?.pathname || '/dashboard';
+    return <Navigate to={targetPath} replace />;
+  }
+
+  return <>{children}</>;
 }
 
 function AppRoutes() {
