@@ -85,7 +85,18 @@ export const handler: Handler = async (event) => {
         const paymentIntent = await stripe.paymentIntents.retrieve(session.payment_intent as string);
         
         // Get metadata from the payment intent
-        const { storyId, userId, templateId, webhookUrl, apiKey } = paymentIntent.metadata || {};
+        const { 
+          storyId, 
+          userId, 
+          templateId, 
+          childName,
+          childAge,
+          childGender,
+          transformedPhotoUrl,
+          transformId,
+          webhookUrl, 
+          apiKey 
+        } = paymentIntent.metadata || {};
         
         if (!storyId || !userId) {
           throw new Error('Missing required metadata');
@@ -119,7 +130,13 @@ export const handler: Handler = async (event) => {
             data: {
               storyId,
               userId,
+              userEmail: session.customer_email,
               templateId,
+              childName,
+              childAge,
+              childGender,
+              transformedPhotoUrl,
+              transformId,
               sessionId: session.id
             }
           };
